@@ -135,14 +135,21 @@ func main() {
 		fname2 := files[j].Name()
 		return getFrameIdx(fname1) < getFrameIdx(fname2)
 	})
-	for i, fi := range files {
+	var prevFrameIdx int = -1
+	for _, fi := range files {
 		frameIdx := getFrameIdx(fi.Name())
 		fmt.Printf("[yolo] processing %s (%d)\n", fi.Name(), frameIdx)
 		lines := getLines()
-		if i > 0 {
+		if prevFrameIdx != -1 {
 			rects := parseLines(lines)
-			saveRects(frameIdx, rects)
+			saveRects(prevFrameIdx, rects)
 		}
 		stdin.Write([]byte(framePath + fi.Name() + "\n"))
+		prevFrameIdx = frameIdx
+	}
+	if prevFrameIdx != -1 {
+		lines := getLines()
+		rects := parseLines(lines)
+		saveRects(prevFrameIdx, rects)
 	}
 }

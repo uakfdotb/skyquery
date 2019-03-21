@@ -1,7 +1,6 @@
-package main
+package pipeline
 
 import (
-	"github.com/mitroadmaps/gomapinfer/common"
 	goslgraph "github.com/cpmech/gosl/graph"
 
 	"fmt"
@@ -9,8 +8,34 @@ import (
 )
 
 func MakeObjTrackOperator(op *Operator) {
-	sequences := getUnterminatedSequences(op.Name)
+	// unterminated sequences
+	var sequences map[int]*Sequence
+
+	op.InitFunc = func(frame *Frame) {
+		db.Exec(
+			"DELETE sm FROM sequence_members AS sm " +
+			"INNER JOIN sequences AS seqs ON seqs.id = sm.sequence_id " +
+			"WHERE seqs.dataframe = ? AND sm.time >= ?",
+			op.Name, frame.Time,
+		)
+		db.Exec("DELETE FROM sequences WHERE dataframe = ? AND time >= ?", op.Name, frame.Time)
+		db.Exec("UPDATE sequences SET terminated_at = NULL WHERE dataframe = ? AND terminated_at >= ?", op.Name, frame.Time)
+
+		sequences = GetUnterminatedSequences(op.Name)
+	}
+
+	// we rerun at the minimum of:
+	// * any frame processed from parent
+	// * start time of sequences that were modified
+	updateRerunTime := func(t time.Time) {
+		if op.RerunTime == nil || t.Before(*op.RerunTime) {
+			op.RerunTime = new(time.Time)
+			*op.RerunTime = t
+		}
+	}
+
 	op.DetFunc = func(frame *Frame, detections []*Detection) {
+		updateRerunTime(frame.Time)
 		if Debug {
 			fmt.Printf("[%s] matching %d detections with %d active sequences\n", op.Name, len(detections), len(sequences))
 		}
@@ -21,39 +46,30 @@ func MakeObjTrackOperator(op *Operator) {
 		}
 		matches := hungarianMatcher(sequences, detectionMap)
 		for seqID, detection := range matches {
-			sequences[seqID].AddMember(detection, "", frame.Time)
+			sequences[seqID].AddMember(detection, detection.Time)
+			updateRerunTime(sequences[seqID].Members[0].Detection.Time)
 		}
 
 		// new sequences for unmatched detections
 		for _, detection := range detectionMap {
-			seq := NewSequence(op.Name)
-			seq.AddMember(detection, "", frame.Time)
+			seq := NewSequence(op.Name, detection.Time)
+			seq.AddMember(detection, detection.Time)
 			sequences[seq.ID] = seq
 		}
 
-		// terminate old sequences, also create list to pass to children
-		var sequenceList []*Sequence
+		// terminate old sequences
 		for _, seq := range sequences {
-			sequenceList = append(sequenceList, seq)
 			lastTime := seq.Members[len(seq.Members)-1].Detection.Time
 			if frame.Time.Sub(lastTime) < 2*time.Second {
 				continue
 			}
 			seq.Terminate(frame.Time)
 			delete(sequences, seq.ID)
-		}
-
-		for _, child := range op.Children {
-			child.SeqFunc(frame, sequenceList)
+			updateRerunTime(seq.Members[0].Detection.Time)
 		}
 	}
-}
 
-func getIoU(a common.Rectangle, b common.Rectangle) float64 {
-	intersectRect := a.Intersection(b)
-	intersectArea := intersectRect.Area()
-	unionArea := a.Area() + b.Area() - intersectArea
-	return intersectArea / unionArea
+	op.Loader = op.SequenceLoader
 }
 
 // Returns map from sequences to detection that should be added corresponding to that sequence.

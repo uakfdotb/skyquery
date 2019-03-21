@@ -1,4 +1,4 @@
-package golib
+package pipeline
 
 import (
 	"github.com/mitroadmaps/gomapinfer/common"

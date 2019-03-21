@@ -1,10 +1,12 @@
-package golib
+package pipeline
 
 import (
 	_ "github.com/go-sql-driver/mysql"
 
 	"database/sql"
 )
+
+var db *Database = NewDatabase()
 
 func checkErr(err error) {
 	if err != nil {

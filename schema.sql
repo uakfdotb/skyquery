@@ -12,7 +12,8 @@ CREATE TABLE video_frames (
 	video_id INT NOT NULL,
 	idx INT NOT NULL,
 	time timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
-	homography varchar(2048) DEFAULT NULL
+	homography VARCHAR(2048) DEFAULT NULL,
+	bounds VARCHAR(2048) DEFAULT NULL
 );
 CREATE INDEX video_id ON video_frames (video_id);
 
@@ -22,11 +23,12 @@ CREATE TABLE det_dataframes (
 	model VARCHAR(16) NOT NULL
 );
 
-CREATE TABLE seq_dataframes (
+CREATE TABLE dataframes (
 	name VARCHAR(16) NOT NULL PRIMARY KEY,
-	parent VARCHAR(16) NOT NULL,
+	parents VARCHAR(255) NOT NULL,
 	op_type VARCHAR(16) NOT NULL,
-	operands VARCHAR(2048) NOT NULL
+	operands VARCHAR(2048) NOT NULL,
+	seq INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE detections (
@@ -43,15 +45,35 @@ CREATE INDEX dataframe ON detections (dataframe);
 CREATE TABLE sequences (
 	id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
 	dataframe VARCHAR(16) NOT NULL,
+	time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00',
 	terminated_at TIMESTAMP NULL DEFAULT NULL
 );
 CREATE INDEX dataframe ON sequences (dataframe);
+
+CREATE TABLE sequence_metadata (
+	id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+	sequence_id INT NOT NULL,
+	time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00',
+	metadata VARCHAR(2048) NOT NULL DEFAULT ''
+);
+CREATE INDEX sequence_id ON sequence_metadata (sequence_id);
 
 CREATE TABLE sequence_members (
 	id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
 	sequence_id INT NOT NULL,
 	detection_id INT NOT NULL,
-	metadata VARCHAR(2048),
-	created_at TIMESTAMP DEFAULT '0000-00-00 00:00:00'
+	time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00'
 );
 CREATE INDEX sequence_id ON sequence_members (sequence_id);
+
+CREATE TABLE matrix_data (
+	id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+	dataframe VARCHAR(16) NOT NULL,
+	time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00',
+	i INT NOT NULL,
+	j INT NOT NULL,
+	val INT NOT NULL,
+	metadata VARCHAR(2048) NOT NULL DEFAULT ''
+);
+CREATE INDEX dataframe ON matrix_data (dataframe);
+CREATE INDEX cell ON matrix_data (i, j);
