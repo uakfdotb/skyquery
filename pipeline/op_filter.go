@@ -22,17 +22,17 @@ var FilterFuncs = map[string]FilterFunc{
 	},
 }
 
-func MakeFilterOperator(op *Operator, operands []string) {
-	filterFunc := FilterFuncs[operands[0]]
-	val, err := strconv.ParseFloat(operands[2], 64)
+func MakeFilterOperator(op *Operator, operands map[string]string) {
+	filterFunc := FilterFuncs[operands["left"]]
+	val, err := strconv.ParseFloat(operands["right"], 64)
 	if err != nil {
 		panic(err)
 	}
 	evaluate := func(seq *Sequence) bool {
 		v1 := filterFunc(seq)
-		if operands[1] == "<" && v1 < val {
+		if operands["op"] == "<" && v1 < val {
 			return true
-		} else if operands[1] == ">" && v1 > val {
+		} else if operands["op"] == ">" && v1 > val {
 			return true
 		}
 		return false
@@ -43,27 +43,14 @@ func MakeFilterOperator(op *Operator, operands []string) {
 	op.InitFunc = func(frame *Frame) {
 		// for filter sequences: seq.time = seq.terminated_at (if not null) = member.time for all members
 		// so because the times are the same, we can simply delete all rows with time >= rerun-time
-		db.Exec(
-			"DELETE sm FROM sequence_members AS sm " +
-			"INNER JOIN sequences AS seqs ON seqs.id = sm.sequence_id " +
-			"WHERE seqs.dataframe = ? AND sm.time >= ?",
-			op.Name, frame.Time,
-		)
-		db.Exec(
-			"DELETE smeta FROM sequence_metadata AS smeta " +
-			"INNER JOIN sequences AS seqs ON seqs.id = smeta.sequence_id " +
-			"WHERE seqs.dataframe = ? AND smeta.time >= ?",
-			op.Name, frame.Time,
-		)
-		db.Exec("DELETE FROM sequences WHERE dataframe = ? AND time >= ?", op.Name, frame.Time)
+		driver.UndoSequences(op.Name, frame.Time)
 
 		for _, seq := range GetUnterminatedSequences(op.Name) {
 			parentID, _ := strconv.Atoi(seq.GetMetadata()[0])
 			sequences[parentID] = seq
 		}
 
-		rerunTime := frame.Time
-		op.RerunTime = &rerunTime
+		op.updateChildRerunTime(frame.Time)
 	}
 
 	op.SeqFunc = func(frame *Frame, seqs []*Sequence) {

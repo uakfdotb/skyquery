@@ -14,26 +14,12 @@ type Frame struct {
 	Bounds common.Polygon
 }
 
-func rowsToFrames(rows Rows) []*Frame {
-	var frames []*Frame
-	for rows.Next() {
-		var frame Frame
-		var polyStr *string
-		rows.Scan(&frame.ID, &frame.VideoID, &frame.Idx, &frame.Time, &polyStr)
-		if polyStr != nil {
-			frame.Bounds = ParsePolygon(*polyStr)
-		}
-		frames = append(frames, &frame)
-	}
-	return frames
-}
-
-func GetPredecessorFrames(t time.Time, count int) []*Frame {
-	rows := db.Query("SELECT id, video_id, idx, time, bounds FROM video_frames WHERE time < ? ORDER BY time DESC LIMIT ?", t, count)
+func GetFrame(id int) *Frame {
+	rows := db.Query("SELECT id, IFNULL(video_id, 0), idx, time, bounds FROM video_frames WHERE id = ?", id)
 	frames := rowsToFrames(rows)
-	orderedFrames := make([]*Frame, len(frames))
-	for i := range orderedFrames {
-		orderedFrames[i] = frames[len(frames) - i - 1]
+	if len(frames) == 1 {
+		return frames[0]
+	} else {
+		return nil
 	}
-	return orderedFrames
 }

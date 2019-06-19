@@ -10,6 +10,7 @@ import (
 type SequenceMember struct {
 	ID int
 	Detection *Detection
+	time time.Time
 }
 
 type Sequence struct {
@@ -17,53 +18,32 @@ type Sequence struct {
 	Time time.Time
 	Members []*SequenceMember
 	Terminated *time.Time
+	dataframe string
 	metadata *[]string
 }
 
 func NewSequence(dataframe string, t time.Time) *Sequence {
-	result := db.Exec("INSERT INTO sequences (dataframe, time) VALUES (?, ?)", dataframe, t)
-	return &Sequence{
-		ID: result.LastInsertId(),
-		Time: t,
-	}
+	return driver.AddSequence(dataframe, t)
 }
 
 func (seq *Sequence) Terminate(t time.Time) {
-	seq.Terminated = new(time.Time)
-	*seq.Terminated = t
-	db.Exec("UPDATE sequences SET terminated_at = ? WHERE id = ?", t, seq.ID)
+	driver.TerminateSequence(seq, t)
 }
 
 func (seq *Sequence) AddMember(detection *Detection, t time.Time) {
-	member := &SequenceMember{
-		Detection: detection,
-	}
-	seq.Members = append(seq.Members, member)
-	result := db.Exec(
-		"INSERT INTO sequence_members (sequence_id, detection_id, time) VALUES (?, ?, ?)",
-		seq.ID, member.Detection.ID, t,
-	)
-	member.ID = result.LastInsertId()
+	driver.AddSequenceMember(seq, detection, t)
 }
 
 func (seq *Sequence) GetMetadata() []string {
 	if seq.metadata == nil {
-		rows := db.Query("SELECT metadata FROM sequence_metadata WHERE sequence_id = ? ORDER BY time", seq.ID)
-		var metadata []string
-		for rows.Next() {
-			var s string
-			rows.Scan(&s)
-			metadata = append(metadata, s)
-		}
+		metadata := driver.GetSequenceMetadata(seq)
 		seq.metadata = &metadata
 	}
 	return *seq.metadata
 }
 
 func (seq *Sequence) AddMetadata(metadata string, t time.Time) {
-	seq.GetMetadata()
-	*seq.metadata = append(*seq.metadata, metadata)
-	db.Exec("INSERT INTO sequence_metadata (sequence_id, metadata, time) VALUES (?, ?, ?)", seq.ID, metadata, t)
+	driver.AddSequenceMetadata(seq, metadata, t)
 }
 
 // Returns location of this sequence at specified time,
@@ -102,66 +82,14 @@ func (seq *Sequence) LocationAt(t time.Time) *common.Point {
 	return &location
 }
 
-func rowsToSequences(rows Rows) map[int]*Sequence {
-	sequences := make(map[int]*Sequence)
-	for rows.Next() {
-		var sequenceID int
-		var member SequenceMember
-		var detection Detection
-		var polygonStr string
-
-		var seqTime time.Time
-		var seqTerminated *time.Time
-
-		rows.Scan(&member.ID, &sequenceID, &detection.ID, &detection.Time, &polygonStr, &detection.FrameID, &seqTime, &seqTerminated)
-		detection.Polygon = ParsePolygon(polygonStr)
-
-		member.Detection = &detection
-		if sequences[sequenceID] == nil {
-			sequences[sequenceID] = &Sequence{
-				ID: sequenceID,
-				Time: seqTime,
-				Members: []*SequenceMember{&member},
-				Terminated: seqTerminated,
-			}
-		} else {
-			sequences[sequenceID].Members = append(sequences[sequenceID].Members, &member)
-		}
-	}
-	return sequences
-}
-
 func GetUnterminatedSequences(dataframe string) map[int]*Sequence {
-	rows := db.Query(
-		"SELECT sm.id, sm.sequence_id, sm.detection_id, d.time, d.polygon, d.frame_id, seqs.time, seqs.terminated_at " +
-		"FROM sequences AS seqs, sequence_members AS sm, detections AS d " +
-		"WHERE seqs.id = sm.sequence_id AND d.id = sm.detection_id AND " +
-		"seqs.dataframe = ? AND seqs.terminated_at IS NULL " +
-		"ORDER BY sm.id",
-		dataframe,
-	)
-	return rowsToSequences(rows)
+	return driver.GetUnterminatedSequences(dataframe)
 }
 
 func GetSequencesAfter(dataframe string, t time.Time) map[int]*Sequence {
-	rows := db.Query(
-		"SELECT sm.id, sm.sequence_id, sm.detection_id, d.time, d.polygon, d.frame_id, seqs.time, seqs.terminated_at " +
-		"FROM sequences AS seqs, sequence_members AS sm, detections AS d " +
-		"WHERE seqs.id = sm.sequence_id AND d.id = sm.detection_id AND " +
-		"sm.sequence_id IN (SELECT id FROM sequences AS subseqs WHERE subseqs.dataframe = ? AND (subseqs.terminated_at IS NULL OR subseqs.terminated_at >= ?))" +
-		"ORDER BY d.time",
-		dataframe, t,
-	)
-	return rowsToSequences(rows)
+	return driver.GetSequencesAfter(dataframe, t)
 }
 
 func GetSequences(dataframe string) map[int]*Sequence {
-	rows := db.Query(
-		"SELECT sm.id, sm.sequence_id, sm.detection_id, d.time, d.polygon, d.frame_id, seqs.time, seqs.terminated_at " +
-		"FROM sequences AS seqs, sequence_members AS sm, detections AS d " +
-		"WHERE seqs.id = sm.sequence_id AND d.id = sm.detection_id AND seqs.dataframe = ? " +
-		"ORDER BY sm.id",
-		dataframe,
-	)
-	return rowsToSequences(rows)
+	return driver.GetSequences(dataframe)
 }

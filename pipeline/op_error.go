@@ -4,22 +4,23 @@ package pipeline
 // So at those intervals, we simply increment matrix value (error) by the
 // specified rate.
 // But we reset to zero if the cell is visible in the frame.
-func MakeErrorOperator(op *Operator) {
+func MakeErrorOperator(op *Operator, operands map[string]string) {
 	var matrix map[[2]int]*MatrixData
 
 	op.InitFunc = func(frame *Frame) {
-		db.Exec(
-			"DELETE FROM matrix_data WHERE dataframe = ? AND time >= ?",
-			op.Name, frame.Time,
-		)
-
+		driver.DeleteMatrixAfter(op.Name, frame.Time)
 		matrix = LoadMatrix(op.Name)
-
-		rerunTime := frame.Time
-		op.RerunTime = &rerunTime
+		op.updateChildRerunTime(frame.Time)
 	}
 
 	op.MatFunc = func(frame *Frame, matrixData []*MatrixData) {
+		for cell := range GetCellsInFrame(frame) {
+			if matrix[cell] == nil || matrix[cell].Val == 0 {
+				continue
+			}
+			matrix[cell] = AddMatrixData(op.Name, cell[0], cell[1], 0, "", frame.Time)
+		}
+
 		for _, parentMD := range matrixData {
 			cell := [2]int{parentMD.I, parentMD.J}
 			prevMD := matrix[cell]
@@ -30,11 +31,10 @@ func MakeErrorOperator(op *Operator) {
 			}
 			val += parentMD.Val
 			// but zero if visible
-			if isCellInFrame(cell, frame) {
+			if IsCellInFrame(cell, frame, MatrixGridSize) {
 				val = 0
 			}
-			myMD := AddMatrixData(op.Name, cell[0], cell[1], val, "", frame.Time)
-			matrix[cell] = myMD
+			matrix[cell] = AddMatrixData(op.Name, cell[0], cell[1], val, "", frame.Time)
 		}
 	}
 

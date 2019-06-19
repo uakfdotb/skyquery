@@ -4,40 +4,35 @@ CREATE TABLE videos (
 	processed TINYINT(1) NOT NULL DEFAULT 0,
 	start_location VARCHAR(2048) NOT NULL,
 	start_time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00',
-	preprocessed TINYINT(1) NOT NULL DEFAULT 0,
+	preprocessed TINYINT(1) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE video_frames (
 	id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
-	video_id INT NOT NULL,
+	video_id INT DEFAULT NULL,
 	idx INT NOT NULL,
-	time timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+	time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00',
 	homography VARCHAR(2048) DEFAULT NULL,
 	bounds VARCHAR(2048) DEFAULT NULL
 );
 CREATE INDEX video_id ON video_frames (video_id);
-
-CREATE TABLE det_dataframes (
-	name VARCHAR(16) NOT NULL PRIMARY KEY,
-	region VARCHAR(2048) NOT NULL,
-	model VARCHAR(16) NOT NULL
-);
 
 CREATE TABLE dataframes (
 	name VARCHAR(16) NOT NULL PRIMARY KEY,
 	parents VARCHAR(255) NOT NULL,
 	op_type VARCHAR(16) NOT NULL,
 	operands VARCHAR(2048) NOT NULL,
-	seq INT NOT NULL DEFAULT 0
+	seq INT NOT NULL DEFAULT 0,
+	rerun_time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00'
 );
 
 CREATE TABLE detections (
-	id INT NOT NULL AUTO_INCREMENT,
+	id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
 	dataframe VARCHAR(16) NOT NULL,
 	time TIMESTAMP NOT NULL DEFAULT '0000-00-00 00:00:00',
 	frame_polygon VARCHAR(2048) NOT NULL,
 	polygon VARCHAR(2048) DEFAULT NULL,
-	frame_id INT NOT NULL,
+	frame_id INT NOT NULL
 );
 CREATE INDEX frame_id ON detections (frame_id);
 CREATE INDEX dataframe ON detections (dataframe);
@@ -77,3 +72,10 @@ CREATE TABLE matrix_data (
 );
 CREATE INDEX dataframe ON matrix_data (dataframe);
 CREATE INDEX cell ON matrix_data (i, j);
+
+CREATE TABLE pending_routes (
+	id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+	drone_id INT NOT NULL,
+	i INT NOT NULL,
+	j INT NOT NULL
+);

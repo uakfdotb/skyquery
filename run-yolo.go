@@ -21,7 +21,7 @@ func main() {
 	var startTime time.Time
 	db.QueryRow("SELECT start_time FROM videos WHERE id = ?", videoID).Scan(&startTime)
 
-	c := exec.Command("./darknet", "detect", "../drone-car-data2/yolov3-test.cfg", "backup/yolov3.backup", "-thresh", "0.3")
+	c := exec.Command("./darknet", "detect", "../drone-car-data3/yolov3-test.cfg", "backup/yolov3.backup", "-thresh", "0.3")
 	c.Dir = "darknet/"
 	stdin, err := c.StdinPipe()
 	if err != nil {

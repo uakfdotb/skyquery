@@ -32,7 +32,7 @@ func GetFrameDetections(dataframe string, frame *Frame) []*Detection {
 
 func GetDetectionsAfter(dataframe string, t time.Time) []*Detection {
 	rows := db.Query(
-		"SELECT id, time, polygon, frame_id FROM detections WHERE dataframe = ? AND polygon IS NOT NULL AND polygon != '' AND time >= ? ORDER BY time",
+		"SELECT id, time, polygon, frame_id FROM detections WHERE dataframe = ? AND polygon IS NOT NULL AND polygon != '' AND time >= ? AND (SELECT enabled FROM video_frames WHERE video_frames.id = frame_id) = 1 ORDER BY time",
 		dataframe, t,
 	)
 	return rowsToDetections(rows)

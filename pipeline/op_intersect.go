@@ -26,7 +26,11 @@ For sequences:
 
 // Filters for sequences that intersect with an image.
 // Filtering can be either all detections in the sequence intersect, or any intersect.
-func MakeIntersectOperator(op *Operator) {
+func MakeIntersectOperator(op *Operator, operands map[string]string) {
+	mode := "all"
+	if operands["mode"] == "any" {
+		mode = "any"
+	}
 	matrix := make(map[[2]int]int)
 
 	getMatrixVal := func(cell [2]int, t time.Time) int {
@@ -34,7 +38,7 @@ func MakeIntersectOperator(op *Operator) {
 		if ok {
 			return val
 		}
-		md := GetMatrixDataBefore(op.Parents[1].Name, cell[0], cell[1], t)
+		md := driver.GetMatrixDataBefore(op.Parents[1].Name, cell[0], cell[1], t)
 		if md == nil {
 			matrix[cell] = 0
 		} else {
@@ -50,27 +54,14 @@ func MakeIntersectOperator(op *Operator) {
 	rejectedSeqs := make(map[int]bool)
 
 	op.InitFunc = func(frame *Frame) {
-		db.Exec(
-			"DELETE sm FROM sequence_members AS sm " +
-			"INNER JOIN sequences AS seqs ON seqs.id = sm.sequence_id " +
-			"WHERE seqs.dataframe = ? AND sm.time >= ?",
-			op.Name, frame.Time,
-		)
-		db.Exec(
-			"DELETE smeta FROM sequence_metadata AS smeta " +
-			"INNER JOIN sequences AS seqs ON seqs.id = smeta.sequence_id " +
-			"WHERE seqs.dataframe = ? AND smeta.time >= ?",
-			op.Name, frame.Time,
-		)
-		db.Exec("DELETE FROM sequences WHERE dataframe = ? AND time >= ?", op.Name, frame.Time)
+		driver.UndoSequences(op.Name, frame.Time)
 
 		for _, seq := range GetUnterminatedSequences(op.Name) {
 			parentID, _ := strconv.Atoi(seq.GetMetadata()[0])
 			sequences[parentID] = seq
 		}
 
-		rerunTime := frame.Time
-		op.RerunTime = &rerunTime
+		op.updateChildRerunTime(frame.Time)
 	}
 
 	op.Func = func(frame *Frame, pd ParentData) {
@@ -90,19 +81,31 @@ func MakeIntersectOperator(op *Operator) {
 				continue
 			}
 
-			// this is code for ALL mode
-			// TODO: implement ANY mode
-			detectionsMatch := true
-			for _, member := range seq.Members {
-				cell := toCell(member.Detection.Polygon.Bounds().Center())
-				val := getMatrixVal(cell, frame.Time)
-				if val <= 0 {
-					detectionsMatch = false
-					break
+			// determine intersection depending on mode
+			var okay bool
+			if mode == "all" {
+				okay = true
+				for _, member := range seq.Members {
+					cell := ToCell(member.Detection.Polygon.Bounds().Center(), MatrixGridSize)
+					val := getMatrixVal(cell, frame.Time)
+					if val <= 0 {
+						okay = false
+						break
+					}
+				}
+			} else if mode == "any" {
+				okay = false
+				for _, member := range seq.Members {
+					cell := ToCell(member.Detection.Polygon.Bounds().Center(), MatrixGridSize)
+					val := getMatrixVal(cell, frame.Time)
+					if val > 0 {
+						okay = true
+						break
+					}
 				}
 			}
 
-			if !detectionsMatch {
+			if !okay {
 				rejectedSeqs[seq.ID] = true
 				continue
 			}

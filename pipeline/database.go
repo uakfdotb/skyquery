@@ -18,9 +18,22 @@ type Database struct {
 	db *sql.DB
 }
 
+var dbName string = "skyql"
+
+func SetDBName(name string) {
+	dbName = name
+	db = NewDatabase()
+}
+
 func NewDatabase() *Database {
 	db := new(Database)
-	sqlDB, err := sql.Open("mysql", "skyql:skyql@/skyql?charset=utf8&parseTime=true")
+	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/skyql?charset=utf8&parseTime=true")
+	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_const_skyql?charset=utf8&parseTime=true")
+	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_ttl_skyql?charset=utf8&parseTime=true")
+	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_pattern_skyql?charset=utf8&parseTime=true")
+	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_pattern2_skyql?charset=utf8&parseTime=true")
+	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_pattern3_skyql?charset=utf8&parseTime=true")
+	sqlDB, err := sql.Open("mysql", "skyql:skyql@/" + dbName + "?charset=utf8&parseTime=true")
 	checkErr(err)
 	db.db = sqlDB
 	return db

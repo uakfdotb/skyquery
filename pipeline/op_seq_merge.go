@@ -2,13 +2,18 @@ package pipeline
 
 import (
 	"fmt"
+	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // Minimum number of consecutive frames where sequence end is visible in the field of view
 // to qualify for a gap (sequence termination).
-const SeqMergeGapThreshold int = 5
+const SeqMergeGapThreshold int = 10
+
+// Minimum distance from edge of frame for counting gaps.
+const SeqMergeGapPadding float64 = 50
 
 // Maximum distance of next seq start poly from previous seq end poly.
 const SeqMergeDistanceThreshold float64 = 40
@@ -21,8 +26,10 @@ const SeqMergeDistanceThreshold float64 = 40
 //   X between A and B without any sequence during that visit.
 // This functionality is disabled if ignore_gaps=false.
 // But ignore_gaps results in a dataframe without any terminated sequences, so be careful...?
-func MakeSeqMergeOperator(op *Operator) {
+func MakeSeqMergeOperator(op *Operator, operands map[string]string) {
 	op.LookBehind = 5*time.Second
+	mode := operands["mode"]
+	cachedImageSimilarities := make(map[[2]int]float64)
 
 	// map from parent sequence ID -> our merged sequence
 	parentSeqMap := make(map[int]*Sequence)
@@ -51,25 +58,28 @@ func MakeSeqMergeOperator(op *Operator) {
 		return seqs
 	}
 
+	getDetectionDistanceToFrame := func(frame *Frame, detection *Detection) float64 {
+		p := detection.Polygon.Bounds().Center()
+		if !frame.Bounds.Contains(p) {
+			return -1
+		}
+		var d float64 = -1
+		for _, segment := range frame.Bounds.Segments() {
+			segD := segment.Distance(p)
+			if d == -1 || segD < d {
+				d = segD
+			}
+		}
+		return d
+	}
+
 	getSequencesEndingInFrame := func(frame *Frame) map[int]*Sequence {
 		matchSeqs := make(map[int]*Sequence)
 		for _, seq := range activeSequences {
-			p := seq.Members[len(seq.Members)-1].Detection.Polygon.Bounds().Center()
-			if !frame.Bounds.Contains(p) {
+			detection := seq.Members[len(seq.Members)-1].Detection
+			d := getDetectionDistanceToFrame(frame, detection)
+			if d == -1 || d < SeqMergeGapPadding {
 				continue
-			}
-			var d float64 = -1
-			for _, segment := range frame.Bounds.Segments() {
-				segD := segment.Distance(p)
-				if d == -1 || segD < d {
-					d = segD
-				}
-			}
-			if d < 50 {
-				continue
-			}
-			if seq.Members[0].Detection.ID == 23379 {
-				fmt.Printf("DEBUG DEBUG at frame idx=%d, d=%v, p=%v, bounds=%v, seqid=%d\n", frame.Idx, d, p, frame.Bounds, seq.ID)
 			}
 			matchSeqs[seq.ID] = seq
 		}
@@ -109,24 +119,34 @@ func MakeSeqMergeOperator(op *Operator) {
 		return gapSeqs
 	}
 
+	// return first or last detection at least SeqMergeGapPadding away from frame
+	findPaddedDetection := func(seq *Sequence, first bool) *Detection {
+		var detections []*Detection
+		for _, member := range seq.Members {
+			detections = append(detections, member.Detection)
+		}
+		if !first {
+			ndetections := make([]*Detection, len(detections))
+			for i := range detections {
+				ndetections[i] = detections[len(detections) - i - 1]
+			}
+			detections = ndetections
+		}
+		for _, detection := range detections {
+			frame := GetFrame(detection.FrameID)
+			d := getDetectionDistanceToFrame(frame, detection)
+			if d >= SeqMergeGapPadding {
+				return detection
+			}
+		}
+		return detections[0]
+	}
+
 	op.InitFunc = func(firstFrame *Frame) {
 		// We set members.time equal to the seq.time of the parent sequence from which the members came from.
 		// Similarly, metadata about parent sequences is the same seq.time.
 		// So we delete everythnig based on the time.
-		db.Exec(
-			"DELETE sm FROM sequence_members AS sm " +
-			"INNER JOIN sequences AS seqs ON seqs.id = sm.sequence_id " +
-			"WHERE seqs.dataframe = ? AND sm.time >= ?",
-			op.Name, firstFrame.Time,
-		)
-		db.Exec(
-			"DELETE smeta FROM sequence_metadata AS smeta " +
-			"INNER JOIN sequences AS seqs ON seqs.id = smeta.sequence_id " +
-			"WHERE seqs.dataframe = ? AND smeta.time >= ?",
-			op.Name, firstFrame.Time,
-		)
-		db.Exec("DELETE FROM sequences WHERE dataframe = ? AND time >= ?", op.Name, firstFrame.Time)
-		db.Exec("UPDATE sequences SET terminated_at = NULL WHERE dataframe = ? AND terminated_at >= ?", op.Name, firstFrame.Time)
+		driver.UndoSequences(op.Name, firstFrame.Time)
 
 		activeSequences = GetUnterminatedSequences(op.Name)
 		for _, seq := range activeSequences {
@@ -138,15 +158,9 @@ func MakeSeqMergeOperator(op *Operator) {
 	}
 
 	// we rerun at the minimum of any frame processed from parent or start time of sequences that we modify
-	updateRerunTime := func(t time.Time) {
-		if op.RerunTime == nil || t.Before(*op.RerunTime) {
-			op.RerunTime = new(time.Time)
-			*op.RerunTime = t
-		}
-	}
 
 	op.SeqFunc = func(frame *Frame, seqs []*Sequence) {
-		updateRerunTime(frame.Time)
+		op.updateChildRerunTime(frame.Time)
 
 		// merge seqs into candidates
 		for _, parentSeq := range seqs {
@@ -154,6 +168,9 @@ func MakeSeqMergeOperator(op *Operator) {
 				continue
 			}
 			parentBegins := parentSeq.Members[0].Detection
+			if len(parentSeq.Members) >= 4 {
+				parentBegins = parentSeq.Members[3].Detection
+			}
 			parentPoint := parentBegins.Polygon.Bounds().Center()
 
 			var bestMergeSequence *Sequence
@@ -161,6 +178,12 @@ func MakeSeqMergeOperator(op *Operator) {
 
 			for _, mySeq := range activeSequences {
 				myEnds := mySeq.Members[len(mySeq.Members)-1].Detection
+
+				// only for parked cars!
+				if len(mySeq.Members) >= 4 {
+					myEnds = mySeq.Members[len(mySeq.Members)-4].Detection
+				}
+
 				myPoint := myEnds.Polygon.Bounds().Center()
 				d := parentPoint.Distance(myPoint)
 				if d > SeqMergeDistanceThreshold {
@@ -168,6 +191,24 @@ func MakeSeqMergeOperator(op *Operator) {
 				} else if parentBegins.Time.Before(myEnds.Time) {
 					continue
 				}
+
+				if mode == "image_similarity" {
+					// use external python script to verify that image similarity is close
+					// first get last/first detections that are SeqMergeGapPadding away from their frames
+					var similarity float64
+					k := [2]int{parentSeq.ID, mySeq.ID}
+					if _, ok := cachedImageSimilarities[k]; ok {
+						similarity = cachedImageSimilarities[k]
+					} else {
+						similarity = getImageSimilarity(findPaddedDetection(parentSeq, true), findPaddedDetection(mySeq, false))
+						cachedImageSimilarities[k] = similarity
+						fmt.Printf("%v %v\n", k, similarity)
+					}
+					if similarity < 0.15 {
+						continue
+					}
+				}
+
 				if bestMergeSequence == nil || d < bestDistance {
 					bestMergeSequence = mySeq
 					bestDistance = d
@@ -175,14 +216,13 @@ func MakeSeqMergeOperator(op *Operator) {
 			}
 
 			if bestMergeSequence != nil {
-				updateRerunTime(bestMergeSequence.Time)
+				op.updateChildRerunTime(bestMergeSequence.Time)
 				for _, member := range parentSeq.Members {
 					bestMergeSequence.AddMember(member.Detection, frame.Time)
 				}
 				bestMergeSequence.AddMetadata(fmt.Sprintf("%d", parentSeq.ID), frame.Time)
 				parentSeqMap[parentSeq.ID] = bestMergeSequence
 				seqStatuses[bestMergeSequence.ID] = seqStatus{}
-				break
 			}
 		}
 
@@ -210,4 +250,33 @@ func MakeSeqMergeOperator(op *Operator) {
 	}
 
 	op.Loader = op.SequenceLoader
+}
+
+func getImageSimilarity(detection1 *Detection, detection2 *Detection) float64 {
+	var video1, video2, frame1, frame2 string
+	db.QueryRow("SELECT video_id, idx FROM video_frames WHERE id = ?", detection1.FrameID).Scan(&video1, &frame1)
+	db.QueryRow("SELECT video_id, idx FROM video_frames WHERE id = ?", detection2.FrameID).Scan(&video2, &frame2)
+	var poly1, poly2 string
+	db.QueryRow("SELECT frame_polygon FROM detections WHERE id = ?", detection1.ID).Scan(&poly1)
+	db.QueryRow("SELECT frame_polygon FROM detections WHERE id = ?", detection2.ID).Scan(&poly2)
+	cmd := exec.Command("python", "seq-merge-imagediff.py", video1, video2, frame1, frame2, poly1, poly2)
+	bytes, err := cmd.Output()
+	if err != nil {
+		fmt.Println(string(bytes))
+		fmt.Println("warning!! image similarity error")
+		//panic(err)
+		return 0
+	}
+	output := strings.TrimSpace(string(bytes))
+	lines := strings.Split(output, "\n")
+	lastLine := lines[len(lines)-1]
+	if strings.Contains(lastLine, "bad") {
+		return 0
+	}
+	similarity, err := strconv.ParseFloat(lastLine, 64)
+	if err != nil {
+		fmt.Println(output)
+		panic(err)
+	}
+	return similarity
 }

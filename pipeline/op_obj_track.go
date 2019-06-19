@@ -7,19 +7,12 @@ import (
 	"time"
 )
 
-func MakeObjTrackOperator(op *Operator) {
+func MakeObjTrackOperator(op *Operator, operands map[string]string) {
 	// unterminated sequences
 	var sequences map[int]*Sequence
 
 	op.InitFunc = func(frame *Frame) {
-		db.Exec(
-			"DELETE sm FROM sequence_members AS sm " +
-			"INNER JOIN sequences AS seqs ON seqs.id = sm.sequence_id " +
-			"WHERE seqs.dataframe = ? AND sm.time >= ?",
-			op.Name, frame.Time,
-		)
-		db.Exec("DELETE FROM sequences WHERE dataframe = ? AND time >= ?", op.Name, frame.Time)
-		db.Exec("UPDATE sequences SET terminated_at = NULL WHERE dataframe = ? AND terminated_at >= ?", op.Name, frame.Time)
+		driver.UndoSequences(op.Name, frame.Time)
 
 		sequences = GetUnterminatedSequences(op.Name)
 	}
@@ -27,15 +20,9 @@ func MakeObjTrackOperator(op *Operator) {
 	// we rerun at the minimum of:
 	// * any frame processed from parent
 	// * start time of sequences that were modified
-	updateRerunTime := func(t time.Time) {
-		if op.RerunTime == nil || t.Before(*op.RerunTime) {
-			op.RerunTime = new(time.Time)
-			*op.RerunTime = t
-		}
-	}
 
 	op.DetFunc = func(frame *Frame, detections []*Detection) {
-		updateRerunTime(frame.Time)
+		op.updateChildRerunTime(frame.Time)
 		if Debug {
 			fmt.Printf("[%s] matching %d detections with %d active sequences\n", op.Name, len(detections), len(sequences))
 		}
@@ -47,7 +34,7 @@ func MakeObjTrackOperator(op *Operator) {
 		matches := hungarianMatcher(sequences, detectionMap)
 		for seqID, detection := range matches {
 			sequences[seqID].AddMember(detection, detection.Time)
-			updateRerunTime(sequences[seqID].Members[0].Detection.Time)
+			op.updateChildRerunTime(sequences[seqID].Members[0].Detection.Time)
 		}
 
 		// new sequences for unmatched detections
@@ -65,7 +52,7 @@ func MakeObjTrackOperator(op *Operator) {
 			}
 			seq.Terminate(frame.Time)
 			delete(sequences, seq.ID)
-			updateRerunTime(seq.Members[0].Detection.Time)
+			op.updateChildRerunTime(seq.Members[0].Detection.Time)
 		}
 	}
 
