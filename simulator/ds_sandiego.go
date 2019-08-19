@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -166,6 +167,39 @@ func (sd SanDiego) GetMaxes() map[[2]int]int {
 		}
 	}
 	return maxes
+}
+
+func (sd SanDiego) GetMaxes2() map[[2]int]int {
+	cellCounts := make(map[[2]int][]int)
+	for cell3d, transactions := range sd.Grid {
+		cell := [2]int{cell3d[0], cell3d[1]}
+		timeCell := cell3d[2]
+		t := time.Unix(int64(timeCell) * int64(SDTimeGridSize/time.Second), 0)
+		var count int = 0
+		for _, transaction := range transactions {
+			if transaction.Start.After(t) || transaction.End.Before(t) {
+				continue
+			}
+			count++
+		}
+		cellCounts[cell] = append(cellCounts[cell], count)
+	}
+	maxes := make(map[[2]int]int)
+	for cell, counts := range cellCounts {
+		sort.Ints(counts)
+		idx := len(counts) * 5 / 10
+		maxes[cell] = counts[idx]
+	}
+	return maxes
+}
+
+func (sd SanDiego) GetMaxes3() map[[2]int]int {
+	maxes := sd.GetMaxes()
+	halves := make(map[[2]int]int)
+	for cell, max := range maxes {
+		halves[cell] = max / 2 + 1
+	}
+	return halves
 }
 
 func (sd SanDiego) getTransactions(cell [2]int, t time.Time) []*SDTransaction {

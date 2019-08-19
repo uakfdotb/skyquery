@@ -26,6 +26,14 @@ const DefaultBattery int = 60 //80
 //const GridSize float64 = 1024
 //const DefaultBattery int = 30
 
+//const TimeStep time.Duration = 15*time.Second
+//const GridSize float64 = 256
+//const DefaultBattery int = 240
+
+//const TimeStep time.Duration = 4*time.Second
+//const GridSize float64 = 128
+//const DefaultBattery int = 900
+
 type DataSource func(cell [2]int, t time.Time) int
 
 func SaveGTData(ds DataSource, cells [][2]int, start time.Time, end time.Time, recordInterval time.Duration, fname string) map[string]map[int]int {
@@ -119,6 +127,46 @@ func (s *Simulation) Step() {
 	s.Time = s.Time.Add(TimeStep)
 }
 
+func (s *Simulation) rerouteAll() {
+	var droneStatuses []router.DroneStatus
+	for _, drone := range s.Drones {
+		droneStatuses = append(droneStatuses, router.DroneStatus{
+			Cell: drone.Location,
+			Battery: drone.Battery,
+		})
+	}
+	routes := s.Router.GetRoutes(nil, droneStatuses)
+	for i, route := range routes {
+		s.Drones[i].Route = route
+	}
+}
+
+func (s *Simulation) rerouteEmpty() {
+	var droneStatuses []router.DroneStatus
+	var droneIdx []int
+	ignoreCells := make(map[[2]int]bool)
+	for idx, drone := range s.Drones {
+		if len(drone.Route) == 0 {
+			droneStatuses = append(droneStatuses, router.DroneStatus{
+				Cell: drone.Location,
+				Battery: drone.Battery,
+			})
+			droneIdx = append(droneIdx, idx)
+		} else {
+			for _, cell := range drone.Route {
+				ignoreCells[cell] = true
+			}
+		}
+	}
+	if len(droneStatuses) == 0 {
+		return
+	}
+	routes := s.Router.GetRoutes(ignoreCells, droneStatuses)
+	for i, route := range routes {
+		s.Drones[droneIdx[i]].Route = route
+	}
+}
+
 // Run simulation for the specified number of timesteps.
 func (s *Simulation) Run(duration int) {
 	/*var droneStatuses []router.DroneStatus
@@ -141,17 +189,7 @@ func (s *Simulation) Run(duration int) {
 			}
 		}
 		if needReroute {
-			var droneStatuses []router.DroneStatus
-			for _, drone := range s.Drones {
-				droneStatuses = append(droneStatuses, router.DroneStatus{
-					Cell: drone.Location,
-					Battery: drone.Battery,
-				})
-			}
-			routes := s.Router.GetRoutes(droneStatuses)
-			for i, route := range routes {
-				s.Drones[i].Route = route
-			}
+			s.rerouteEmpty()
 		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"time"
 )
@@ -41,7 +42,8 @@ func main() {
 	//db.Exec("DELETE FROM video_frames")
 
 	start := time.Date(2018, time.May, 7, 11, 0, 0, 0, time.UTC)
-	end := time.Date(2018, time.May, 21, 11, 0, 0, 0, time.UTC)
+	//end := time.Date(2018, time.May, 28, 11, 0, 0, 0, time.UTC)
+	end := time.Date(2018, time.July, 2, 11, 0, 0, 0, time.UTC)
 	rect := common.Rectangle{
 		common.Point{-6000, -12500},
 		common.Point{6000, -500},
@@ -49,7 +51,7 @@ func main() {
 	sd := simulator.LoadSanDiego(start, end, rect)
 	fmt.Printf("bounds: %v\n", sd.Bounds())
 
-	maxes := sd.GetMaxes()
+	maxes := sd.GetMaxes3()
 	/*fmt.Println(maxes)
 	fmt.Println(len(maxes))
 	uniques := make(map[[2]int]bool)
@@ -65,7 +67,7 @@ func main() {
 		for y := minCell[1]; y <= maxCell[1]; y++ {
 			cell := [2]int{x, y}
 			cells = append(cells, cell)
-			pipeline.AddMatrixData("error", x, y, 999999, "", start.Add(-time.Hour))
+			pipeline.AddMatrixData("error", x, y, 99999999999, "", start.Add(-time.Hour))
 			pipeline.AddMatrixData("maxes", x, y, maxes[cell], "", start.Add(-time.Hour))
 		}
 	}
@@ -84,12 +86,12 @@ func main() {
 		Router: router,
 		Base: base,
 	}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 1; i++ {
 		s.AddDrone()
 	}
-	predictor := simulator.NewPredictor(driver, "sd_counts", 96)
+	predictor := simulator.NewPredictor2(driver, "sd_counts", 96, maxes)
 	for s.Time.Before(end) {
-		//db.Exec("DELETE FROM matrix_data WHERE dataframe != 'sd_counts' AND time < ? AND val != '999999'", s.Time.Add(-2*time.Minute))
+		//db.Exec("DELETE FROM matrix_data WHERE dataframe != 'sd_counts' AND time < ? AND val != '99999999999'", s.Time.Add(-2*time.Minute))
 		// delete old matrix data
 		t := s.Time.Add(-2*time.Hour)
 		for name, df := range driver.DFs {
@@ -97,7 +99,7 @@ func main() {
 				continue
 			}
 			for _, md := range df.MatrixData {
-				if md.Val == 999999 || !md.Time.Before(t) {
+				if md.Val == 99999999999 || !md.Time.Before(t) {
 					continue
 				}
 				delete(df.MatrixData, md.ID)
@@ -110,11 +112,18 @@ func main() {
 		s.Run(int(15*time.Minute/simulator.TimeStep))
 		predictions := predictor.Predict()
 
-		if false { // direct case
+		if true { // direct case
 			for cell, prediction := range predictions {
-				//fmt.Printf("%v %v\n", cell, prediction)
-				pipeline.AddMatrixData("error_rate", cell[0], cell[1], int(prediction.Stddev*100), "", preTime)
+				pipeline.AddMatrixData("error", cell[0], cell[1], int(prediction.Stddev*100), "", preTime)
 				pipeline.AddMatrixData("predictions", cell[0], cell[1], int(prediction.Val), "", preTime)
+
+				/*var val int
+				if prediction.Val < 0.5 {
+					val = 0
+				} else {
+					val = 1
+				}
+				pipeline.AddMatrixData("predictions", cell[0], cell[1], val, "", preTime)*/
 			}
 		} else { // thresholded case
 			for cell, prediction := range predictions {
@@ -129,7 +138,7 @@ func main() {
 					dist := gaussian.NewGaussian(prediction.Val, prediction.Stddev*prediction.Stddev)
 					pOpen = dist.Cdf(float64(maxes[cell])-0.5)
 				}
-				stddev := pOpen * (1 - pOpen)
+				stddev := math.Sqrt(pOpen * (1 - pOpen))
 				var val int
 				if pOpen > 0.5 {
 					val = 1
@@ -137,12 +146,13 @@ func main() {
 					val = 0
 				}
 				//fmt.Printf("val=%v, stddev=%v, p=%v, out-stddev=%v, out-value=%v\n", prediction.Val, prediction.Stddev, pOpen, stddev, val)
-				pipeline.AddMatrixData("error_rate", cell[0], cell[1], int(stddev*100), "", preTime)
+				pipeline.AddMatrixData("error", cell[0], cell[1], int(stddev*100), "", preTime)
+				//pipeline.AddMatrixData("error", cell[0], cell[1], int(prediction.Stddev*100), "", preTime)
 				pipeline.AddMatrixData("predictions", cell[0], cell[1], val, "", preTime)
 			}
 		}
 
-		pipeline.RunPipeline()
+		//pipeline.RunPipeline()
 	}
 	fmt.Printf("%v\n", s.Drones[0].Route)
 
@@ -188,11 +198,11 @@ func main() {
 	predCounts := save(prefix + "_counts.json", "sd_counts")
 	save(prefix + "_predictions.json", "predictions")
 	save(prefix + "_new.json", "sd_new")
-	//actualCounts := simulator.SaveGTData(sd.GetCount, cells, start, end, RecordInterval, "gt_counts.json")
+	//actualCounts := simulator.SaveGTData(sd.GetCount, cells, start, end, RecordInterval, "gt_counts_8week50.json")
 
 	// for gt new data, clear the seen, otherwise everything is seen already
 	sd.Seen = make(map[string]bool)
-	simulator.SaveGTData(sd.GetNew, cells, start, end, RecordInterval, "gt_new.json")
+	//simulator.SaveGTData(sd.GetNew, cells, start, end, RecordInterval, "gt_new_8week50.json")
 
 	countsToOpen := func(m map[string]map[int]int) map[string]map[int]int {
 		open := make(map[string]map[int]int)
@@ -210,10 +220,11 @@ func main() {
 		return open
 	}
 
+	//predOpen := countsToOpen(predictions)
 	predOpen := countsToOpen(predCounts)
 	//actualOpen := countsToOpen(actualCounts)
 	saveMap(prefix + "_open.json", predOpen)
-	//saveMap("gt_open.json", actualOpen)
+	//saveMap("gt_open_8week50.json", actualOpen)
 
 	/*dbDriver := pipeline.NewDatabaseDriver(db)
 	for _, md := range driver.DFs["sd_counts"].MatrixData {
