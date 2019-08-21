@@ -207,7 +207,7 @@ func (op *Operator) Execute() {
 		}
 		goodFrames = append(goodFrames, frames[i])
 	}
-	frames = goodFrames
+	//frames = goodFrames
 
 	// identify the rerun frame, i.e., first frame after rerunTime
 	var rerunFrame *Frame

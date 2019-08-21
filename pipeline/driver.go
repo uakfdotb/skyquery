@@ -27,8 +27,8 @@ type Driver interface {
 	UndoSequences(dataframe string, t time.Time)
 }
 
-//var driver = NewDatabaseDriver(db)
-var driver = NewInMemoryDriver()
+var driver = NewDatabaseDriver(db)
+//var driver = NewInMemoryDriver()
 //var driver2 = NewDatabaseDriver(db)
 
 func GetDriver() Driver {

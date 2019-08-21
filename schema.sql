@@ -13,7 +13,8 @@ CREATE TABLE video_frames (
 	idx INT NOT NULL,
 	time TIMESTAMP NOT NULL,
 	homography VARCHAR(2048) DEFAULT NULL,
-	bounds VARCHAR(2048) DEFAULT NULL
+	bounds VARCHAR(2048) DEFAULT NULL,
+	enabled TINYINT(1) DEFAULT 1
 );
 CREATE INDEX video_id ON video_frames (video_id);
 
@@ -23,7 +24,7 @@ CREATE TABLE dataframes (
 	op_type VARCHAR(16) NOT NULL,
 	operands VARCHAR(2048) NOT NULL,
 	seq INT NOT NULL DEFAULT 0,
-	rerun_time TIMESTAMP NOT NULL
+	rerun_time TIMESTAMP NOT NULL DEFAULT '1971-01-01 00:00:00'
 );
 
 CREATE TABLE detections (
