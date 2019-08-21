@@ -16,7 +16,7 @@ const GridSize int = 8
 
 func main() {
 	db := pipeline.NewDatabase()
-	ortho := image.ReadImage("apr02-ortho.jpg")
+	ortho := image.ReadImage("ortho.jpg")
 	outjpg := image.ReadImage("parking-mask.jpg")
 	idx := common.NewGridIndex(64)
 	var points []common.Point

@@ -14,7 +14,7 @@ import sys
 video_id = int(sys.argv[1])
 db = get_db.get_db()
 
-BASE_PATH = 'apr02-ortho-masked.jpg'
+BASE_PATH = 'ortho-masked.jpg'
 FRAME_PATH = 'frames/{}/'.format(video_id)
 LK_PARAMETERS = dict(winSize=(21, 21), maxLevel=2, criteria=(cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 30, 0.01))
 
@@ -97,11 +97,8 @@ for row in db.fetchall():
 
 	H = None
 
-	# delete me
-	prev_bounds = None
-
 	if prev_homography is not None and prev_counter < 5:
-		#H = homography_from_flow(prev_homography, prev_gray, frame_gray)
+		H = homography_from_flow(prev_homography, prev_gray, frame_gray)
 		prev_counter += 1
 
 	if H is None:

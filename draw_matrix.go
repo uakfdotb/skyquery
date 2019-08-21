@@ -12,7 +12,7 @@ const GridSize int = 8
 
 func main() {
 	db := golib.NewDatabase()
-	ortho := image.ReadImage("apr02-ortho.jpg")
+	ortho := image.ReadImage("ortho.jpg")
 	matrix := make(map[[2]int]int)
 	rows := db.Query("SELECT i, j, val FROM matrix_data WHERE dataframe = 'parked_counts' ORDER BY id")
 	for i := 0; i < 200; i++ {

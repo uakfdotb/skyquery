@@ -18,7 +18,7 @@ type Database struct {
 	db *sql.DB
 }
 
-var dbName string = "skyql"
+var dbName string = "skyquery"
 
 func SetDBName(name string) {
 	dbName = name
@@ -33,7 +33,7 @@ func NewDatabase() *Database {
 	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_pattern_skyql?charset=utf8&parseTime=true")
 	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_pattern2_skyql?charset=utf8&parseTime=true")
 	//sqlDB, err := sql.Open("mysql", "skyql:skyql@/sd_pattern3_skyql?charset=utf8&parseTime=true")
-	sqlDB, err := sql.Open("mysql", "skyql:skyql@/" + dbName + "?charset=utf8&parseTime=true")
+	sqlDB, err := sql.Open("mysql", "skyquery:skyquery@/" + dbName + "?charset=utf8&parseTime=true")
 	checkErr(err)
 	db.db = sqlDB
 	return db

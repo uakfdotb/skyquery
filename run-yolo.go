@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/mitroadmaps/gomapinfer/common"
-	"./golib"
+	"./pipeline"
 
 	"bufio"
 	"fmt"
@@ -17,11 +17,11 @@ import (
 
 func main() {
 	videoID, _ := strconv.Atoi(os.Args[1])
-	db := golib.NewDatabase()
+	db := pipeline.NewDatabase()
 	var startTime time.Time
 	db.QueryRow("SELECT start_time FROM videos WHERE id = ?", videoID).Scan(&startTime)
 
-	c := exec.Command("./darknet", "detect", "../drone-car-data3/yolov3-test.cfg", "backup/yolov3.backup", "-thresh", "0.3")
+	c := exec.Command("./darknet", "detect", "../yolo/yolo.cfg", "../yolo/yolo.backup", "-thresh", "0.3")
 	c.Dir = "darknet/"
 	stdin, err := c.StdinPipe()
 	if err != nil {
@@ -51,7 +51,7 @@ func main() {
 		panic(err)
 	}
 
-	framePath := fmt.Sprintf("/home/ubuntu/skyql-subsystem/frames/%d/", videoID)
+	framePath := fmt.Sprintf("frames/%d/", videoID)
 	files, err := ioutil.ReadDir(framePath)
 	if err != nil {
 		panic(err)
@@ -144,7 +144,7 @@ func main() {
 			rects := parseLines(lines)
 			saveRects(prevFrameIdx, rects)
 		}
-		stdin.Write([]byte(framePath + fi.Name() + "\n"))
+		stdin.Write([]byte("../" + framePath + fi.Name() + "\n"))
 		prevFrameIdx = frameIdx
 	}
 	if prevFrameIdx != -1 {

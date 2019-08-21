@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	ortho := image.ReadImage("apr02-ortho.jpg")
+	ortho := image.ReadImage("ortho.jpg")
 
 	/*sequences := make(map[int][]common.Rectangle)
 	db := pipeline.NewDatabase()
